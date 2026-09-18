@@ -70,7 +70,7 @@ A GPT is the *Attention Is All You Need* decoder with the encoder — and theref
                  │
                  ▼
       ┌─────────────────────┐
-      │  Projection Layer   │   ──► one score per vocabulary word
+      │  Projection Layer   │   ──► one score per character
       └─────────────────────┘
                  │
                  ▼
@@ -82,7 +82,7 @@ Every component is implemented from scratch in this repo:
 | Component | What it does |
 |---|---|
 | `InputEmbeddings` | Maps token ids to learnable `d_model` vectors, scaled by `√d_model` |
-| `PositionalEncoding` | Fixed sinusoidal signal so attention knows word order |
+| `PositionalEncoding` | Fixed sinusoidal signal so attention knows character order |
 | `MultiHeadAttentionBlock` | Q/K/V projections, scaled dot-product attention, causal masking, head splitting and merging |
 | `FeedForwardBlock` | Position-wise two-layer network with ReLU |
 | `LayerNormalization` | Hand-written layer norm with learnable gain and bias |
@@ -98,28 +98,46 @@ Every component is implemented from scratch in this repo:
 
 The repo ships trained on `tiny-shakespeare.txt` — the classic ~1MB corpus of Shakespeare's collected plays. It's small enough to train on a laptop CPU and large enough to produce recognisably Shakespearean output.
 
+The tokenizer is **character-level**, not word-level — the vocabulary is just the ~60-90 individual characters that appear in the text (letters, punctuation, spaces, newlines), each of which shows up thousands of times. That's what lets a model this small actually generalize instead of memorizing exact phrases: see [How training actually works](#how-training-actually-works) below for why that choice matters.
+
 ```
 Using device: cuda
-Loaded 1115394 characters from tiny-shakespeare.txt
+Loaded 1115394 characters from docs\tiny-shakespeare.txt
 Roughly 202651 words
 Loaded tokenizer from tokenizers\gpt_tokenizer.json
 Total tokens in dataset: 261973
-Training windows: 235711, validation windows: 26134
+Training windows: 235647, validation windows: 26070
 Model has 10,008,623 parameters
-Epoch 1/20 - train loss: 3.8193 - val loss: 8.0356 - val perplexity: 3088.9
-Epoch 2/20 - train loss: 2.1805 - val loss: 8.3352 - val perplexity: 4168.0
-Epoch 3/20 - train loss: 1.9508 - val loss: 8.2677 - val perplexity: 3895.9
-Epoch 4/20 - train loss: 1.8612 - val loss: 8.2202 - val perplexity: 3715.4
-Epoch 5/20 - train loss: 1.8102 - val loss: 8.1819 - val perplexity: 3575.7
+Epoch 1/20 - train loss: 3.3260 - val loss: 8.4482 - val perplexity: 4666.7
+Epoch 2/20 - train loss: 1.9122 - val loss: 8.4404 - val perplexity: 4630.2
+Epoch 3/20 - train loss: 1.7625 - val loss: 8.3086 - val perplexity: 4058.6
+Epoch 4/20 - train loss: 1.6986 - val loss: 8.2781 - val perplexity: 3936.6
+Epoch 5/20 - train loss: 1.6612 - val loss: 8.2568 - val perplexity: 3853.8
+Epoch 6/20 - train loss: 1.6356 - val loss: 8.2261 - val perplexity: 3737.2
+Epoch 7/20 - train loss: 1.6170 - val loss: 8.1854 - val perplexity: 3588.3
+Epoch 8/20 - train loss: 1.6029 - val loss: 8.1840 - val perplexity: 3583.0
+Epoch 9/20 - train loss: 1.5917 - val loss: 8.1379 - val perplexity: 3421.9
+Epoch 10/20 - train loss: 1.5826 - val loss: 8.1812 - val perplexity: 3573.0
+Epoch 11/20 - train loss: 1.5746 - val loss: 8.1418 - val perplexity: 3434.9
+Epoch 12/20 - train loss: 1.5679 - val loss: 8.1670 - val perplexity: 3522.9
+Epoch 13/20 - train loss: 1.5621 - val loss: 8.1542 - val perplexity: 3477.8
+Epoch 14/20 - train loss: 1.5569 - val loss: 8.1466 - val perplexity: 3451.7
+Epoch 15/20 - train loss: 1.5523 - val loss: 8.1645 - val perplexity: 3514.0
+Epoch 16/20 - train loss: 1.5479 - val loss: 8.1421 - val perplexity: 3436.1
+Epoch 17/20 - train loss: 1.5442 - val loss: 8.1540 - val perplexity: 3477.3
+Epoch 18/20 - train loss: 1.5409 - val loss: 8.1536 - val perplexity: 3475.8
+Epoch 19/20 - train loss: 1.5378 - val loss: 8.1308 - val perplexity: 3397.5
+Epoch 20/20 - train loss: 1.5349 - val loss: 8.1635 - val perplexity: 3510.3
+
 ```
 
 **Sample generation** (prompt: `"KING RICHARD"`, temperature `0.8`, top-k `20`):
 
 ```
-KING RICHARD II : Thanks , gentle Somerset ; sweet Oxford , thanks . PRINCE EDWARD : And take his thanks that yet hath nothing else . Messenger : Prepare you , lords , for Edward is at hand . Ready to fight ; therefore be resolute . OXFORD : I thought
+KING RICHARD III : Then he must die to - day ; For now he hath two deep bosom my soul brought forth ; The rest of that consorted crew , Destruction straight shall dog them at the heels . Good uncle , help to order several powers To Oxford , or
 ```
 
-Untrained, the model produces uniform noise. After twenty epochs it produces character names, line breaks, iambic cadence and dialogue structure — all learned purely from predicting the next word.
+Untrained, the model produces uniform noise. After twenty epochs it produces character names, line breaks, iambic cadence and dialogue structure — all learned purely from predicting the next character.
 
 ---
 
@@ -181,7 +199,7 @@ Everything is tunable from one dictionary.
 | Key | Default | What it controls |
 |---|---|---|
 | `dataset_path` | `docs/tiny-shakespeare.txt` | **The only thing you need to change** |
-| `seq_len` | `64` | How many tokens of context the model can see |
+| `seq_len` | `128` | How many characters of context the model can see |
 | `d_model` | `256` | Width of every vector flowing through the model |
 | `num_layers` | `4` | How many decoder blocks are stacked |
 | `num_heads` | `4` | Parallel attention heads (must divide `d_model`) |
@@ -194,7 +212,7 @@ Everything is tunable from one dictionary.
 **Sizing guidance:**
 
 - **Small dataset (< 1 MB):** keep the defaults. A bigger model will simply memorize the text.
-- **Larger dataset (> 10 MB):** try `d_model=512`, `num_layers=6`, `seq_len=128`, `batch_size=16`.
+- **Larger dataset (> 10 MB):** try `d_model=512`, `num_layers=6`, `seq_len=256`, `batch_size=16`.
 - **Out of memory?** Halve `batch_size` first, then `seq_len`.
 
 ---
@@ -206,21 +224,23 @@ The single idea behind GPT: **predict the next token.** The implementation turns
 Your text becomes one long stream of token ids. Every training example is a window of that stream, paired with the same window shifted one position left:
 
 ```
-stream:   the   sun   rose   over   the   city
-input :  [the   sun   rose   over]
-label :  [sun   rose   over   the ]
+stream:   t   h   e       c   a   t
+input :  [t   h   e       c   a]
+label :  [h   e       c   a   t]
 ```
 
 Read column by column and each window becomes many training questions at once:
 
 | Given | Predict |
 |---|---|
-| `the` | `sun` |
-| `the sun` | `rose` |
-| `the sun rose` | `over` |
-| `the sun rose over` | `the` |
+| `t` | `h` |
+| `th` | `e` |
+| `the` | ` ` |
+| `the ` | `c` |
 
-One window of 64 tokens is **64 supervised examples learned in a single forward pass** — which is precisely why the causal mask matters. It guarantees position *i* can never see position *i+1*, so the model can't read the answer it's being asked to predict. Remove the mask and training loss collapses to near zero while generated text turns to noise.
+One window of 128 characters is **128 supervised examples learned in a single forward pass** — which is precisely why the causal mask matters. It guarantees position *i* can never see position *i+1*, so the model can't read the answer it's being asked to predict. Remove the mask and training loss collapses to near zero while generated text turns to noise.
+
+**Why character-level, not word-level?** A word-level vocabulary on natural text is huge — tens of thousands of distinct words, most appearing only once or twice, so the model barely gets a chance to learn most of them and just memorizes exact training phrases instead (a telltale sign: training loss falls nicely while validation loss stays flat). A character-level vocabulary is a couple of dozen to ~90 symbols, every one of which appears thousands of times, so the model is forced to learn actual patterns — spelling, then grammar, then structure — rather than memorizing. The cost is that the model has to work one letter at a time, which is why it also gets a longer lookback window to compensate.
 
 ---
 
@@ -282,7 +302,7 @@ The notebook is fully self-contained and heavily commented — every block carri
 
 ## Roadmap
 
-- [ ] **BPE tokenizer** — replaces `[UNK]` on unseen words and shrinks the vocabulary substantially
+- [ ] **BPE tokenizer** — subword units instead of raw characters, so the model spends less capacity learning to spell and more learning structure
 - [ ] **Weight tying** — share the embedding matrix with the output projection
 - [ ] **Learning-rate warmup** with the schedule from the original paper
 - [ ] **Gradient clipping** for stability on larger corpora
